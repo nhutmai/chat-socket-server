@@ -8,9 +8,11 @@ export const redisProvider: Provider = {
   useFactory: () => {
     //create redis client
     const redisClient = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
+      host: process.env.REDIS_HOST || '',
+      port: parseInt(process.env.REDIS_PORT || ''),
+      password: process.env.REDIS_PASSWORD || '',
     });
+
     //error event
     redisClient.on('error', (err) => {
       console.error('Redis Error:', err);

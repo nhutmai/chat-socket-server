@@ -12,7 +12,12 @@ import { Logger } from '@nestjs/common';
 import { ConnectionService } from '../connection/connection.service';
 import { AuthWsMiddleware } from '../auth/ws-auth.middleware';
 import { Redis } from 'ioredis';
-import { redisHost, redisPort, redisChannel } from '../utils/constant';
+import {
+  redisHost,
+  redisPort,
+  redisChannel,
+  redisPassword,
+} from '../utils/constant';
 import { WsService } from './ws.service';
 
 @WebSocketGateway({ cors: { origin: '*', methods: ['GET', 'POST'] } })
@@ -30,6 +35,7 @@ export class WsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.redisSubscriber = new Redis({
       host: redisHost,
       port: redisPort,
+      password: redisPassword,
     });
   }
 

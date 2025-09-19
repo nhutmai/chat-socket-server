@@ -5,7 +5,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
-import { redisHost, redisPort, webPort } from './utils/constant';
+import { redisHost, redisPort, webPort, redisPassword } from './utils/constant';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -19,6 +19,7 @@ async function bootstrap() {
       options: {
         host: redisHost,
         port: redisPort,
+        password: redisPassword,
       },
     });
   await microservice.listen();

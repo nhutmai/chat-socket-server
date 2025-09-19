@@ -1,5 +1,8 @@
-const redisHost = process.env.REDIS_HOST || 'localhost';
-const redisPort = parseInt(process.env.REDIS_PORT || '6379', 0);
+require('dotenv').config();
+
+const redisHost = process.env.REDIS_HOST || '';
+const redisPort = parseInt(process.env.REDIS_PORT || '', 0);
+const redisPassword = process.env.REDIS_PASSWORD || '';
 const webPort = process.env.PORT || 3000;
 
 const redisChannel = {
@@ -7,4 +10,4 @@ const redisChannel = {
   notification: 'notification',
 };
 
-export { redisHost, redisPort, redisChannel, webPort };
+export { redisHost, redisPort, redisChannel, webPort, redisPassword };
