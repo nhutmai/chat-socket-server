@@ -1,0 +1,430 @@
+========================================
+HƯỚNG DẪN TÍCH HỢP FRONTEND NESTJS
+VỚI SOCKET SERVICE
+========================================
+
+I. TỔNG QUAN SOCKET SERVICE
+---------------------------
+Socket service này cung cấp real-time communication với các tính năng:
+- Chat room messaging
+- Push notifications
+- User connection management
+- Authentication middleware
+
+Socket Server URL: http://localhost:3000 (hoặc theo WEB_PORT trong .env)
+
+II. CÀI ĐẶT DEPENDENCIES CHO FRONTEND
+------------------------------------
+Trong project NestJS frontend, cài đặt:
+
+npm install socket.io-client
+npm install @types/socket.io-client --save-dev
+
+III. CẤU HÌNH ENVIRONMENT VARIABLES
+----------------------------------
+Thêm vào .env của frontend:
+
+# Socket Service Configuration
+SOCKET_SERVICE_URL=http://localhost:3000
+API_SERVICE_URL=http://localhost:4000  # URL của API service để validate token
+
+IV. AUTHENTICATION
+------------------
+Socket service yêu cầu authentication qua Bearer token:
+
+1. Client phải gửi Authorization header khi kết nối:
+   Authorization: Bearer <your_jwt_token>
+
+2. Token sẽ được validate qua API service endpoint:
+   POST {API_SERVICE_URL}/auth/validate
+
+3. Nếu token hợp lệ, user data sẽ được attach vào socket connection
+
+V. TẠO SOCKET CLIENT SERVICE
+----------------------------
+Tạo file: src/socket/socket.service.ts
+
+import { Injectable, Logger } from '@nestjs/common';
+import { io, Socket } from 'socket.io-client';
+
+@Injectable()
+export class SocketService {
+  private socket: Socket;
+  private readonly logger = new Logger(SocketService.name);
+
+  connect(token: string) {
+    this.socket = io(process.env.SOCKET_SERVICE_URL, {
+      extraHeaders: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    this.socket.on('connect', () => {
+      this.logger.log('Connected to socket server');
+    });
+
+    this.socket.on('disconnect', () => {
+      this.logger.log('Disconnected from socket server');
+    });
+
+    this.socket.on('connect_error', (error) => {
+      this.logger.error('Socket connection error:', error);
+    });
+  }
+
+  disconnect() {
+    if (this.socket) {
+      this.socket.disconnect();
+      this.joinedRooms.clear(); // Clear room tracking on disconnect
+    }
+  }
+
+  private joinedRooms = new Set<string>(); // Track joined rooms
+
+  // Join room cho chat
+  joinRoom(roomId: string) {
+    if (this.socket && !this.joinedRooms.has(roomId)) {
+      this.socket.emit('join_room', roomId);
+      this.joinedRooms.add(roomId); // Track joined room
+    }
+  }
+
+  // Leave room
+  leaveRoom(roomId: string) {
+    if (this.socket && this.joinedRooms.has(roomId)) {
+      this.socket.emit('leave_room', roomId);
+      this.joinedRooms.delete(roomId); // Remove from tracked rooms
+    }
+  }
+
+  // Set active room (room đang xem)
+  setActiveRoom(roomId: string) {
+    if (this.socket) {
+      this.socket.emit('set_active_room', roomId);
+    }
+  }
+
+  // Clear active room (không xem room nào)
+  clearActiveRoom() {
+    if (this.socket) {
+      this.socket.emit('clear_active_room');
+    }
+  }
+
+  // Listen for join room confirmation
+  onJoinedRoom(callback: (data: { roomId: string, success: boolean, error?: string, message?: string }) => void) {
+    if (this.socket) {
+      this.socket.on('joined_room', (data) => {
+        // Sync room tracking với server response
+        if (data.success) {
+          this.joinedRooms.add(data.roomId);
+        }
+        callback(data);
+      });
+    }
+  }
+
+  // Listen for leave room confirmation
+  onLeftRoom(callback: (data: { roomId: string, success: boolean, error?: string, message?: string }) => void) {
+    if (this.socket) {
+      this.socket.on('left_room', (data) => {
+        // Sync room tracking với server response
+        if (data.success) {
+          this.joinedRooms.delete(data.roomId);
+        }
+        callback(data);
+      });
+    }
+  }
+
+  // Listen for incoming messages
+  onReceiveMessage(callback: (data: any) => void) {
+    if (this.socket) {
+      this.socket.on('receive_message', callback);
+    }
+  }
+
+  // Listen for notifications
+  onReceiveNotification(callback: (data: any) => void) {
+    if (this.socket) {
+      this.socket.on('receive_notification', callback);
+    }
+  }
+
+  // Listen for unread message notifications
+  onUnreadMessageNotification(callback: (data: {
+    type: string,
+    roomId: string,
+    message: string,
+    senderId: string,
+    timestamp: string
+  }) => void) {
+    if (this.socket) {
+      this.socket.on('unread_message_notification', callback);
+    }
+  }
+
+  // Listen for active room confirmations
+  onActiveRoomSet(callback: (data: { roomId: string, success: boolean, error?: string }) => void) {
+    if (this.socket) {
+      this.socket.on('active_room_set', callback);
+    }
+  }
+
+  onActiveRoomCleared(callback: (data: { success: boolean, error?: string }) => void) {
+    if (this.socket) {
+      this.socket.on('active_room_cleared', callback);
+    }
+  }
+
+  // Remove listeners
+  removeAllListeners() {
+    if (this.socket) {
+      this.socket.removeAllListeners();
+    }
+  }
+}
+
+VI. EVENTS VÀ PAYLOADS
+----------------------
+
+1. INCOMING EVENTS (từ server tới client):
+
+   a) 'receive_message'
+      - Nhận tin nhắn chat trong room
+      - Payload: {
+          message: string,
+          senderId: string
+        }
+
+   b) 'receive_notification'
+      - Nhận notification cá nhân
+      - Payload: any (tùy thuộc vào notification data)
+
+   c) 'joined_room'
+      - Xác nhận đã join room thành công
+      - Payload: {
+          roomId: string,
+          success: boolean,
+          error?: string,
+          message?: string  // 'Already in room' nếu đã join trước đó
+        }
+
+   d) 'left_room'
+      - Xác nhận đã leave room thành công
+      - Payload: {
+          roomId: string,
+          success: boolean,
+          error?: string,
+          message?: string  // 'Not in room' nếu chưa join
+        }
+
+   e) 'unread_message_notification'
+      - Thông báo có tin nhắn mới từ room khác
+      - Payload: {
+          type: 'unread_message',
+          roomId: string,
+          message: string,
+          senderId: string,
+          timestamp: string
+        }
+
+   f) 'active_room_set'
+      - Xác nhận đã set active room
+      - Payload: {
+          roomId: string,
+          success: boolean,
+          error?: string
+        }
+
+   g) 'active_room_cleared'
+      - Xác nhận đã clear active room
+      - Payload: {
+          success: boolean,
+          error?: string
+        }
+
+2. OUTGOING EVENTS (từ client tới server):
+   
+   a) 'join_room' - Tham gia room chat
+      - Payload: roomId (string)
+
+   b) 'leave_room' - Rời room chat  
+      - Payload: roomId (string)
+
+   c) 'set_active_room' - Set room đang active (đang xem)
+      - Payload: roomId (string)
+
+   d) 'clear_active_room' - Clear active room (không xem room nào)
+      - Payload: không có
+
+VII. GỬI MESSAGES VÀ NOTIFICATIONS
+----------------------------------
+Socket service không handle direct message sending từ client.
+Thay vào đó, nó lắng nghe Redis channels:
+
+1. Gửi chat message:
+   - Gửi qua API service
+   - API service publish message tới Redis channel 'in-room-message'
+   - Socket service sẽ broadcast tới room
+
+2. Gửi notification:
+   - Gửi qua API service  
+   - API service publish tới Redis channel 'notification'
+   - Socket service sẽ gửi tới user cụ thể
+
+VIII. REDIS CHANNELS INTEGRATION
+--------------------------------
+Nếu bạn cần publish từ frontend service:
+
+Redis Channel: 'in-room-message'
+Payload: {
+  roomId: string,
+  data: {
+    message: string,
+    senderId: string
+  }
+}
+
+Redis Channel: 'notification'  
+Payload: {
+  userId: string,
+  notificationData: any
+}
+
+IX. SỬ DỤNG TRONG COMPONENT
+---------------------------
+
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { SocketService } from './socket/socket.service';
+
+@Component({
+  selector: 'app-chat',
+  templateUrl: './chat.component.html'
+})
+export class ChatComponent implements OnInit, OnDestroy {
+  
+  constructor(private socketService: SocketService) {}
+
+  ngOnInit() {
+    // Connect với token
+    const token = localStorage.getItem('auth_token');
+    this.socketService.connect(token);
+
+    // Join room
+    this.socketService.joinRoom('room123');
+
+    // Listen for join confirmation
+    this.socketService.onJoinedRoom((data) => {
+      if (data.success) {
+        console.log(`Successfully joined room: ${data.roomId}`);
+      } else {
+        console.error(`Failed to join room: ${data.error}`);
+      }
+    });
+
+    // Listen for leave confirmation
+    this.socketService.onLeftRoom((data) => {
+      if (data.success) {
+        console.log(`Successfully left room: ${data.roomId}`);
+      } else {
+        console.error(`Failed to leave room: ${data.error}`);
+      }
+    });
+
+    // Listen for messages
+    this.socketService.onReceiveMessage((data) => {
+      console.log('New message:', data);
+      // Handle incoming message
+    });
+
+    // Listen for notifications
+    this.socketService.onReceiveNotification((data) => {
+      console.log('New notification:', data);
+      // Handle notification
+    });
+
+    // Listen for unread message notifications
+    this.socketService.onUnreadMessageNotification((data) => {
+      console.log('Unread message from room:', data.roomId);
+      console.log('Message:', data.message);
+      // Show notification badge, popup, etc.
+      this.showUnreadNotification(data);
+    });
+
+    // Set active room khi user đang xem room
+    this.socketService.setActiveRoom('room123');
+  }
+
+  // Khi user chuyển sang room khác
+  switchToRoom(newRoomId: string) {
+    this.socketService.setActiveRoom(newRoomId);
+  }
+
+  // Khi user không xem room nào (back to room list)
+  backToRoomList() {
+    this.socketService.clearActiveRoom();
+  }
+
+  // Handle unread notification
+  showUnreadNotification(data: any) {
+    // Hiển thị badge, popup, hoặc push notification
+    // Có thể lưu vào local storage để track unread count
+  }
+
+  ngOnDestroy() {
+    this.socketService.removeAllListeners();
+    this.socketService.disconnect();
+  }
+}
+
+X. LƯU Ý QUAN TRỌNG
+-------------------
+
+1. Authentication:
+   - Socket service yêu cầu valid JWT token
+   - Token phải được validate qua API service
+   - Nếu không có token hoặc token invalid, connection sẽ bị reject
+
+2. Room Management:
+   - Client phải join room trước khi nhận messages
+   - Nhớ leave room khi không cần thiết
+
+3. Connection Lifecycle:
+   - Luôn disconnect socket khi component destroy
+   - Handle connection errors gracefully
+
+4. Redis Dependencies:
+   - Socket service phụ thuộc vào Redis để lưu connections
+   - Đảm bảo Redis server đang chạy
+
+5. CORS:
+   - Socket service đã config CORS allow all origins
+   - Có thể tùy chỉnh trong ws.gateway.ts nếu cần
+
+XI. TROUBLESHOOTING
+-------------------
+
+1. Connection Failed:
+   - Kiểm tra SOCKET_SERVICE_URL
+   - Kiểm tra token có valid không
+   - Kiểm tra API_SERVICE_URL có đúng không
+
+2. Authentication Error:
+   - Đảm bảo API service có endpoint /auth/validate
+   - Kiểm tra format của Authorization header
+
+3. Messages không nhận được:
+   - Kiểm tra đã join room chưa
+   - Kiểm tra Redis connection
+   - Kiểm tra room ID có đúng không
+
+4. Join room duplicate logs:
+   - Server sẽ warn nếu client đã trong room
+   - Frontend nên track joined rooms để tránh duplicate calls
+   - Kiểm tra component có re-render và gọi joinRoom() lại không
+   - Sử dụng useEffect dependencies hoặc ngOnInit đúng cách
+
+========================================
+Liên hệ: Nếu có vấn đề, kiểm tra logs của socket service
+========================================

@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+  <head>
+    <title>NestJS Socket.IO Test Client</title>
+  </head>
+  <body>
+    <h1>NestJS Socket.IO Test Client</h1>
+    <p>Mở console của trình duyệt (F12) để xem log.</p>
+
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+    <script>
+      // GIẢ LẬP: Lấy JWT token. Trong ứng dụng thật, bạn sẽ lấy token
+      // sau khi gọi API đăng nhập.
+      // const jwtToken = prompt('Please enter your JWT token:');
+      const jwtToken =
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+
+      if (jwtToken) {
+        console.log('Attempting to connect with token...');
+
+        const socket = io('http://localhost:3000', {
+          // Địa chỉ SocketService
+          extraHeaders: {
+            Authorization: `Bearer ${jwtToken}`,
+          },
+        });
+
+        // Lắng nghe sự kiện 'connect'
+        socket.on('connect', () => {
+          console.log(
+            `✅ Connection successful! Your Socket ID is: ${socket.id}`,
+          );
+          document.body.style.backgroundColor = '#d4edda'; // Xanh lá
+        });
+
+        // Lắng nghe sự kiện 'disconnect'
+        socket.on('disconnect', (reason) => {
+          console.log(`🔌 Disconnected. Reason: ${reason}`);
+          if (reason === 'io server disconnect') {
+            // Server chủ động ngắt kết nối (ví dụ: xác thực thất bại)
+            console.error('Authentication likely failed.');
+          }
+          document.body.style.backgroundColor = '#f8d7da'; // Đỏ
+        });
+
+        // Lắng nghe các lỗi chung do server gửi về
+        socket.on('error', (error) => {
+          console.error('❌ Server sent an error:', error);
+          document.body.style.backgroundColor = '#fff3cd'; // Vàng
+        });
+      } else {
+        alert('No JWT token provided. Connection aborted.');
+      }
+    </script>
+  </body>
+</html>
